@@ -1,5 +1,7 @@
 # Datadog Agent Dockerfile
 
+[![Join the chat at https://gitter.im/freedoughbro/docker-dd-agent](https://badges.gitter.im/freedoughbro/docker-dd-agent.svg)](https://gitter.im/freedoughbro/docker-dd-agent?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 This repository is meant to build the base image for a Datadog Agent container. You will have to use the resulting image to configure and run the Agent.
 
 
@@ -8,14 +10,27 @@ This repository is meant to build the base image for a Datadog Agent container. 
 The default image is ready-to-go. You just need to set your hostname and API_KEY in the environment.
 
 ```
-docker run -d --name dd-agent -h `hostname` -v /var/run/docker.sock:/var/run/docker.sock -v /proc/mounts:/host/proc/mounts:ro -v /sys/fs/cgroup/:/host/sys/fs/cgroup:ro -e API_KEY={your_api_key_here} datadog/docker-dd-agent
+docker run -d --name dd-agent -h `hostname` -v /var/run/docker.sock:/var/run/docker.sock -v /proc/:/host/proc/:ro -v /sys/fs/cgroup/:/host/sys/fs/cgroup:ro -e API_KEY={your_api_key_here} datadog/docker-dd-agent
 ```
 
 If you are running on Amazon Linux, use the following instead:
 
 ```
-docker run -d --name dd-agent -h `hostname` -v /var/run/docker.sock:/var/run/docker.sock -v /proc/mounts:/host/proc/mounts:ro -v /cgroup/:/host/sys/fs/cgroup:ro -e API_KEY={your_api_key_here}
+docker run -d --name dd-agent -h `hostname` -v /var/run/docker.sock:/var/run/docker.sock -v /proc/:/host/proc/:ro -v /cgroup/:/host/sys/fs/cgroup:ro -e API_KEY={your_api_key_here}
 datadog/docker-dd-agent
+```
+
+## Versioning
+
+As per Agent 5.5.0. The docker image is following a new versioning pattern to allow us to release changes to the Docker image of the Datadog Agent but with the same version of the Agent.
+
+The Docker image version will have the following pattern:
+
+`X.Y.Z` where X is the major version of the Docker Image, Y is the minor version, Z will represent the Agent version.
+
+e.g. the first version of the Docker image that will bundle the Datadog Agent 5.5.0 will be:
+```
+10.0.550
 ```
 
 ## Configuration
@@ -24,13 +39,35 @@ datadog/docker-dd-agent
 
 A few parameters can be changed with environment variables.
 
-* `TAGS` set host tags. Add `-e TAGS="mytag0,mytag1"` to use [mytag0, mytag1] as host tags.
+* `TAGS` set host tags. Add `-e TAGS="simple-tag-0,tag-key-1:tag-value-1"` to use [simple-tag-0, tag-key-1:tag-value-1] as host tags.
 * `LOG_LEVEL` set logging verbosity (CRITICAL, ERROR, WARNING, INFO, DEBUG). Add `-e LOG_LEVEL=DEBUG` to turn logs to debug mode.
 * `PROXY_HOST`, `PROXY_PORT`, `PROXY_USER` and `PROXY_PASSWORD` set the proxy configuration.
+* `DD_URL` set the Datadog intake server to send Agent data to (used when [using an agent as a proxy](https://github.com/DataDog/dd-agent/wiki/Proxy-Configuration#using-the-agent-as-a-proxy) )
+* `DOGSTATSD_ONLY` tell the image to only start a standalone dogstatsd instance.
+
+### Enabling integrations
+
+To enable integrations you can write your YAML configuration files in the `/conf.d` folder, they will automatically be copied to `/etc/dd-agent/conf.d/` when the container starts.  You can also do the same for the `/checks.d` folder.   Any Python files in the `/checks.d` folder will automatically be copied to the `/etc/dd-agent/conf.d/` when the container starts.
+
+1. Create a configuration folder on the host and write your YAML files in it.  The examples below can be used for the `/checks.d` folder as well.
+
+    ```
+    mkdir /opt/dd-agent-conf.d
+    touch /opt/dd-agent-conf.d/nginx.yaml
+    ```
+
+2. When creating the container, mount this new folder to `/conf.d`.
+    ```
+    docker run -d --name dd-agent -h `hostname` -v /var/run/docker.sock:/var/run/docker.sock -v /proc/:/host/proc/:ro -v /sys/fs/cgroup/:/host/sys/fs/cgroup:ro -v /opt/dd-agent-conf.d:/conf.d:ro -e API_KEY={your_api_key_here} datadog/docker-dd-agent
+    ```
+
+    _The important part here is `-v /opt/dd-agent-conf.d:/conf.d:ro`_
+
+Now when the container starts, all files in `/opt/dd-agent-conf.d` with a `.yaml` extension will be copied to `/etc/dd-agent/conf.d/`. Please note that to add new files you will need to restart the container.
 
 ### Build an image
 
-To configure integrations or custom checks, you will need to build a Docker image on top of this image.
+To configure specific settings of the agent straight in the image, you may need to build a Docker image on top of this image.
 
 1. Create a `Dockerfile` to set your specific configuration or to install dependencies.
 
@@ -47,7 +84,7 @@ To configure integrations or custom checks, you will need to build a Docker imag
 3. Then run it like the `datadog/docker-dd-agent` image.
 
     ```
-    docker run -d --name dd-agent -h `hostname` -v /var/run/docker.sock:/var/run/docker.sock -v /proc/mounts:/host/proc/mounts:ro -v /sys/fs/cgroup/:/host/sys/fs/cgroup:ro -e API_KEY={your_api_key_here} dd-agent-image
+    docker run -d --name dd-agent -h `hostname` -v /var/run/docker.sock:/var/run/docker.sock -v /proc/:/host/proc/:ro -v /sys/fs/cgroup/:/host/sys/fs/cgroup:ro -e API_KEY={your_api_key_here} dd-agent-image
     ```
 
 4. It's done!
@@ -82,19 +119,13 @@ Basic information about the Agent execution are available through the `logs` com
 
 ### Standalone DogStatsD
 
-To run DogStatsD without the full Agent, add the command `dogstatsd` at the end of the `docker run` command.
+To run DogStatsD without the full Agent, add the `DOGSTATSD_ONLY` environment variable to the `docker run` command.
 
 ```
-docker run -d --name dogstatsd -h `hostname` -v /var/run/docker.sock:/var/run/docker.sock -v /proc/mounts:/host/proc/mounts:ro -v /sys/fs/cgroup/:/host/sys/fs/cgroup:ro -e API_KEY={your_api_key_here} datadog/docker-dd-agent dogstatsd
+docker run -d --name dogstatsd -h `hostname` -v /var/run/docker.sock:/var/run/docker.sock -v /proc/mounts:/host/proc/mounts:ro -v /sys/fs/cgroup/:/host/sys/fs/cgroup:ro -e API_KEY={your_api_key_here} -e DOGSTATSD_ONLY=true datadog/docker-dd-agent
 ```
 
-Usage commands work, but we added simpler ones when DogStatsD is running on its own.
-
-To display dogstatsd-only information.
-
-`docker exec dogstatsd dogstatsd info`
-
-To display dogstatsd-only logs.
+This option allows you to run dogstatsd alone, without supervisor. One consequence of this is that the following command returns logs from dogstatsd directly instead of supervisor:
 
 `docker logs dogstatsd`
 
@@ -127,6 +158,8 @@ Since the Agent container port 8125 should be linked to the host directly, you c
 
 
 ## Limitations
+
+The Agent won't be able to collect disk metrics from volumes that are not mounted to the Agent container. If you want to monitor additional partitions, make sure to share them to the container in your docker run command (e.g. `-v /data:/data:ro`)
 
 Docker isolates containers from the host. As a result, the Agent won't have access to all host metrics.
 
